@@ -19,7 +19,20 @@ fi
 mkdir -p secrets
 umask 077
 openssl rand -hex 32 >"$KEY_FILE"
-chmod 600 "$KEY_FILE"
+
+# n8n 容器以 uid 1000（node）執行。compose 的 secrets 是以 bind mount
+# 方式把 host 檔案掛進容器，容器看到的權限就是 host 上的權限，而且
+# Compose 在非 Swarm 模式會忽略 secret 的 uid/gid/mode 設定。
+# 所以這裡必須讓 uid 1000 讀得到，否則 n8n 會以
+#   EACCES: permission denied, open '/run/secrets/n8n_encryption_key'
+# 不斷重啟。
+chmod 400 "$KEY_FILE"
+if [ "$(id -u)" -eq 0 ]; then
+	chown 1000:1000 "$KEY_FILE"
+else
+	echo "警告：目前不是 root，無法自動設定擁有者。" >&2
+	echo "      請執行：sudo chown 1000:1000 $KEY_FILE" >&2
+fi
 
 echo "已產生 $KEY_FILE"
 echo

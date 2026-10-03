@@ -37,7 +37,11 @@ docker compose stop n8n caddy
 echo "[2/4] 還原加密金鑰..."
 if [ -f "$SRC/n8n_encryption_key" ]; then
 	cp "$SRC/n8n_encryption_key" secrets/n8n_encryption_key
-	chmod 600 secrets/n8n_encryption_key
+	# 同 gen-secrets.sh：金鑰必須讓容器內的 uid 1000（node）讀得到
+	chmod 400 secrets/n8n_encryption_key
+	if [ "$(id -u)" -eq 0 ]; then
+		chown 1000:1000 secrets/n8n_encryption_key
+	fi
 else
 	echo "警告：備份中沒有加密金鑰，將沿用現有金鑰（若與備份不符，憑證會解不開）。" >&2
 fi

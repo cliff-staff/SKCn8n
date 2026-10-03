@@ -194,6 +194,22 @@ crontab -e
 
 ## 常見問題
 
+**n8n 容器一直重啟，日誌出現 `EACCES: permission denied, open '/run/secrets/n8n_encryption_key'`**
+
+加密金鑰檔的擁有者不對。n8n 容器以 uid **1000**（`node`）執行，而 Compose
+的 secrets 是**直接 bind mount host 檔案**，容器看到的權限就是 host 上的權限
+—— 而且 Compose 在非 Swarm 模式會**忽略** secret 的 `uid` / `gid` / `mode`
+設定。所以金鑰必須讓 uid 1000 讀得到：
+
+```bash
+sudo chown 1000:1000 secrets/n8n_encryption_key
+sudo chmod 400 secrets/n8n_encryption_key
+docker compose up -d --force-recreate n8n
+```
+
+`gen-secrets.sh` 與 `restore.sh` 已會自動處理。只有當你手動搬動金鑰檔
+（例如從備份複製、或用 `scp` 上傳）時才會踩到這個問題。
+
 **Caddy 啟動失敗 / 憑證錯誤**
 1. 確認 `certs/fullchain.pem` 與 `certs/privkey.pem` 都存在且非空。
 2. 確認 `fullchain.pem` **有含中繼憑證**（打開應該看到 2 段
@@ -295,7 +311,7 @@ deploy/
 
 | 目錄 | 內容 | 備註 |
 | --- | --- | --- |
-| `secrets/` | n8n 加密金鑰 | 遺失即無法還原憑證，務必備份 |
+| `secrets/` | n8n 加密金鑰 | 遺失即無法還原憑證，務必備份；擁有者須為 uid **1000** |
 | `certs/` | 公司萬用憑證與私鑰 | 私鑰權限 600 |
 | `local-files/` | 檔案節點存取的目錄 | 掛載為容器內 `/files` |
 | `backups/` | 備份輸出 | 建議改存到 NAS |
