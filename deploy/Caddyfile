@@ -1,0 +1,55 @@
+# Caddy 反向代理設定
+#
+# 【憑證】使用公司既有的 *.skycloud.tw 萬用憑證（公開 CA 簽發）。
+#   憑證檔放在 deploy/certs/：
+#     certs/fullchain.pem  ← 伺服器憑證「加中繼憑證」。一定要含中繼，
+#                             只放葉憑證的話瀏覽器會顯示不受信任。
+#     certs/privkey.pem    ← 私鑰
+#   權限：chmod 600 certs/privkey.pem
+#
+#   換憑證後必須重啟才生效：docker compose restart caddy
+#
+# 【內網 DNS】skcn8n.skycloud.tw 需在公司內部 DNS 指向這台 VM 的內網 IP。
+#   此站台不對外開放，因此不需要（也無法）用 Let's Encrypt HTTP 驗證。
+#
+# 【備案】若之後拿不到萬用憑證，可改成 Caddy 自簽：把下面 tls 那行換成
+#   `tls internal`，再將 /data/caddy/pki/authorities/local/root.crt
+#   派送到公司每台電腦的信任存放區。
+
+{$N8N_DOMAIN} {
+	encode zstd gzip
+
+	# 公司萬用憑證。注意：Caddy 不會自動續簽手動載入的憑證，
+	# 憑證到期前需由 IT 更新檔案並重啟 caddy。
+	tls /certs/fullchain.pem /certs/privkey.pem
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	# Caddy 預設會把 80 埠的請求自動轉到 443（需保留 compose 的 80 對應）
+	reverse_proxy n8n:5678 {
+		# n8n 需要知道真正的來源 IP（搭配 N8N_PROXY_HOPS=1）
+		header_up X-Real-IP {remote_host}
+		# 編輯器即時推送與 webhook 串流：關閉緩衝避免卡住
+		flush_interval -1
+		transport http {
+			# 長時間執行的 webhook / SSE 不要被代理逾時切斷
+			read_timeout 1h
+			write_timeout 1h
+		}
+	}
+
+	# 存取日誌（輪替，避免塞爆磁碟）
+	log {
+		output file /data/access.log {
+			roll_size 50MiB
+			roll_keep 10
+			roll_keep_for 720h
+		}
+		format json
+	}
+}
